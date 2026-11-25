@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>알록달록 그림 퀴즈 — 함께하는 멀티플레이</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">🎨</span>
+        <h1>알록달록 그림 퀴즈</h1>
+      </div>
+      <div class="topbar-actions">
+        <span id="conn-badge" class="badge badge-offline">연결 확인 중</span>
+        <button id="sound-toggle" class="icon-btn" type="button" title="효과음 켜기/끄기">🔊</button>
+      </div>
+    </header>
+
+    <div id="setup-banner" class="setup-banner hidden">
+      <div>
+        <strong>아직 멀티플레이 서버(Supabase)가 연결되지 않았어요!</strong>
+        <p>혼자 그리기 연습은 지금 바로 해볼 수 있고, 친구와 같이 하려면 <code>config.js</code>에 Supabase URL과 키를 연결해야 해요.</p>
+      </div>
+    </div>
+
+    <!-- 1. 로비 화면 -->
+    <section id="screen-lobby" class="screen active">
+      <div class="card lobby-card">
+        <h2>내 캐릭터 만들기</h2>
+        <div class="avatar-picker" id="avatar-picker" role="radiogroup" aria-label="아바타 선택">
+          <button type="button" class="avatar-btn selected" data-avatar="🐶">🐶</button>
+          <button type="button" class="avatar-btn" data-avatar="🐱">🐱</button>
+          <button type="button" class="avatar-btn" data-avatar="🐰">🐰</button>
+          <button type="button" class="avatar-btn" data-avatar="🦊">🦊</button>
+          <button type="button" class="avatar-btn" data-avatar="🐻">🐻</button>
+          <button type="button" class="avatar-btn" data-avatar="🐼">🐼</button>
+          <button type="button" class="avatar-btn" data-avatar="🐸">🐸</button>
+          <button type="button" class="avatar-btn" data-avatar="🦁">🦁</button>
+        </div>
+
+        <label class="field">
+          <span>닉네임</span>
+          <input id="nickname-input" type="text" maxlength="12" placeholder="예: 민준이, 지우" autocomplete="off" />
+        </label>
+
+        <div class="lobby-actions">
+          <button id="create-room-btn" class="btn btn-primary btn-lg" type="button">
+            ✨ 새 방 만들기
+          </button>
+
+          <div class="divider"><span>또는</span></div>
+
+          <div class="join-row">
+            <input id="room-code-input" type="text" inputmode="numeric" maxlength="4" placeholder="방 코드 4자리" autocomplete="off" />
+            <button id="join-room-btn" class="btn btn-secondary btn-lg" type="button">들어가기</button>
+          </div>
+
+          <button id="practice-btn" class="btn btn-ghost" type="button">
+            🖍️ 혼자 그리기 연습해보기
+          </button>
+        </div>
+        <p id="lobby-error" class="error-text hidden"></p>
+      </div>
+    </section>
+
+    <!-- 2. 대기실 화면 -->
+    <section id="screen-waiting" class="screen">
+      <div class="card waiting-card">
+        <div class="room-code-box">
+          <span class="room-code-label">방 코드</span>
+          <div class="room-code-value" id="waiting-room-code">0000</div>
+          <div class="room-share-btns">
+            <button id="copy-code-btn" class="btn btn-small" type="button">코드 복사</button>
+            <button id="copy-link-btn" class="btn btn-small" type="button">초대 링크 복사</button>
+          </div>
+        </div>
+
+        <div class="players-section">
+          <h3>함께하는 친구들 (<span id="waiting-player-count">0</span>명)</h3>
+          <ul id="waiting-player-list" class="player-grid"></ul>
+        </div>
+
+        <div id="host-controls" class="host-controls hidden">
+          <label class="round-select">
+            <span>총 라운드 수</span>
+            <select id="round-count-select">
+              <option value="3">3 라운드 (빠른 게임)</option>
+              <option value="5" selected>5 라운드 (추천)</option>
+              <option value="8">8 라운드 (길게 놀기)</option>
+            </select>
+          </label>
+          <button id="start-game-btn" class="btn btn-primary btn-lg" type="button">게임 시작! 🚀</button>
+        </div>
+
+        <p id="guest-waiting-msg" class="muted-msg">방장이 게임을 시작하길 기다리고 있어요...</p>
+
+        <button id="leave-waiting-btn" class="btn btn-ghost" type="button">방 나가기</button>
+      </div>
+    </section>
+
+    <!-- 3. 게임 진행 화면 (멀티플레이 + 혼자 연습 공용) -->
+    <section id="screen-game" class="screen">
+      <div class="game-header card">
+        <div class="game-status-left">
+          <span id="round-badge" class="pill pill-round">1 / 5 라운드</span>
+          <span id="timer-badge" class="pill pill-timer">⏱️ 60초</span>
+        </div>
+        <div class="word-banner" id="word-banner">
+          <span class="word-label" id="word-label">제시어</span>
+          <strong class="word-text" id="word-text">준비 중...</strong>
+        </div>
+        <div class="game-status-right">
+          <button id="exit-game-btn" class="btn btn-small btn-danger-soft" type="button">나가기</button>
+        </div>
+      </div>
+
+      <div class="game-layout">
+        <div class="canvas-panel card">
+          <div class="canvas-wrap">
+            <canvas id="draw-canvas" width="800" height="540"></canvas>
+            <div id="round-overlay" class="round-overlay hidden">
+              <div class="round-overlay-box">
+                <div id="overlay-emoji" class="overlay-emoji">🎉</div>
+                <h3 id="overlay-title">정답!</h3>
+                <p id="overlay-desc"></p>
+              </div>
+            </div>
+          </div>
+
+          <div id="draw-tools" class="draw-tools">
+            <div class="color-palette" id="color-palette">
+              <button type="button" class="color-dot selected" data-color="#1e293b" style="background:#1e293b" aria-label="검정"></button>
+              <button type="button" class="color-dot" data-color="#ef4444" style="background:#ef4444" aria-label="빨강"></button>
+              <button type="button" class="color-dot" data-color="#f97316" style="background:#f97316" aria-label="주황"></button>
+              <button type="button" class="color-dot" data-color="#eab308" style="background:#eab308" aria-label="노랑"></button>
+              <button type="button" class="color-dot" data-color="#22c55e" style="background:#22c55e" aria-label="초록"></button>
+              <button type="button" class="color-dot" data-color="#3b82f6" style="background:#3b82f6" aria-label="파랑"></button>
+              <button type="button" class="color-dot" data-color="#a855f7" style="background:#a855f7" aria-label="보라"></button>
+              <button type="button" class="color-dot eraser-dot" data-color="#ffffff" aria-label="지우개">🧽</button>
+            </div>
+            <div class="brush-controls">
+              <button type="button" class="size-btn" data-size="4" title="가는 펜">•</button>
+              <button type="button" class="size-btn selected" data-size="9" title="중간 펜">●</button>
+              <button type="button" class="size-btn" data-size="18" title="굵은 펜">⬤</button>
+              <button id="clear-canvas-btn" type="button" class="btn btn-small">모두 지우기</button>
+            </div>
+          </div>
+        </div>
+
+        <aside id="side-panel" class="side-panel">
+          <div class="card scoreboard-card">
+            <h3>🏆 점수판</h3>
+            <ul id="game-scoreboard" class="scoreboard-list"></ul>
+          </div>
+
+          <div class="card chat-card">
+            <h3>💬 정답 맞추기</h3>
+            <div id="chat-messages" class="chat-messages"></div>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-input" type="text" maxlength="30" placeholder="정답을 입력해 보세요!" autocomplete="off" />
+              <button id="chat-send-btn" class="btn btn-primary" type="submit">전송</button>
+            </form>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 4. 최종 결과 화면 -->
+    <section id="screen-result" class="screen">
+      <div class="card result-card">
+        <div class="result-trophy">🏆</div>
+        <h2>게임 끝! 모두 수고했어요!</h2>
+        <ol id="result-podium" class="podium-list"></ol>
+        <div class="result-actions">
+          <button id="play-again-btn" class="btn btn-primary btn-lg hidden" type="button">다시 하기 🔄</button>
+          <button id="back-to-lobby-btn" class="btn btn-secondary btn-lg" type="button">로비로 가기</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="words.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
